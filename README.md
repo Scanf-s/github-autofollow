@@ -1,47 +1,100 @@
-# What is this?
+# Serverless 아키텍쳐 기반 깃허브 자동 팔로우/언팔로우 스크립트
 
-This program is designed to reduce the hassle of following and following by hand. When you run this program, it automatically follows/unfollows.
+깃허브 팔로우/언팔로우 수동으로 하기 귀찮아서 자동화 스크립트 만들었고,  
+AWS Serverless 기능들 사용해서 하루에 한번씩 실행되도록 구성했습니다.  
+Free tier 기준 비용 안나오니 안심해주세요.
 
-I've only done a simple test (tested by canceling the follow and following the user again using this Python script), so it may not function properly or might need improvement in the future.
+# AWS Lambda + EventBridge 배포 가이드
 
-# How to install
+## 1. Docker 이미지 빌드 및 ECR 푸시
 
-## 1. Install dependencies
-```shell
-curl -LsSf https://astral.sh/uv/install.sh | sh
-uv venv .venv
-uv sync
+```bash
+# ECR 리포지토리 생성
+aws ecr create-repository --repository-name ECR레포지토리이름
+
+# Docker 이미지 빌드 (Ubuntu/Linux)
+docker build -t ECRIMAGE경로 .
+# (MAC)
+docker buildx build --platform linux/amd64 -t ECRIMAGE경로 .
+
+# ECR 로그인
+aws ecr get-login-password --region <aws-region> | docker login --username AWS --password-stdin <password>
+
+# 이미지 푸시
+docker push ECRIMAGE경로
 ```
 
-## 2. Make .env file and set environment variables
+## 2. IAM 역할 생성
 
-```shell
-# In project...
-vim .env
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+          "Effect": "Allow",
+          "Principal": {
+            "Service": "lambda.amazonaws.com"
+          },
+          "Action": "sts:AssumeRole"
+        }
+    ]
+}
+```
+이렇게 Assume Role을 지정해주고, 연결되는 정책에 AWSLambdaBasicExecutionRole 또는 귀찮으면 FullAcces 추가 `!해당 정책 ARN 기억해두기!`
 
-# .env file seems like..
-# GITHUB_API_URL=https://api.github.com
-# GITHUB_USERNAME=YOUR GITHUB USER NAME
-# GITHUB_TOKEN=YOUT GITHUB AUTH TOKEN
+## 3. Lambda 함수 생성
+
+```bash
+# Lambda 함수 생성 (Container Image)
+aws lambda create-function \
+    --function-name LAMBDA_NAME \
+    --package-type Image \
+    --code ImageUri=이미지경로 \
+    --role 2번에서지정한RoleARN \
+    --timeout 300 \
+    --memory-size 512 \
+    --environment "Variables={GITHUB_USERNAME=깃허브사용자이름,GITHUB_TOKEN=토큰이름,GITHUB_API_URL=https://api.github.com}"
+  
+# 확인 방법
+aws lambda get-function --function-name LAMBDA_NAME
 ```
 
-## 3. Run main.py
-```shell
-source .venv/bin/activate
-python main.py
+## 4. EventBridge 스케줄 생성
+
+```bash
+# EventBridge 규칙 생성 (한국시간 기준 매일 오전 9시 실행)
+aws events put-rule \
+    --name EVENTBRIDGE_NAME \
+    --schedule-expression "cron(0 9 * * ? *)" \
+    --description "Daily GitHub auto follow/unfollow"
+
+# 이거 생성하고 ARN확인하는 방법
+aws events list-rules --name-prefix EVENTBRIDGE_NAME
+
+# Lambda에 Eventbridge 권한 부여
+aws lambda add-permission \
+    --function-name LAMBDA_NAME \
+    --statement-id allow-eventbridge \
+    --action lambda:InvokeFunction \
+    --principal events.amazonaws.com \
+    --source-arn EVENTBRIDGE_ARN
+    
+# Lambda 함수를 타겟으로 추가
+aws events put-targets \
+  --rule EVENTBRIDGE_NAME \
+  --targets "Id"="1","Arn"="LAMBDA_ARN"
 ```
 
-# Sample
+## 5. 이미지 업데이트 시
+```bash
+aws lambda update-function-code \
+  --function-name LAMBDA_NAME \
+  --image-uri ECR이미지경로
+```
 
-There are two users I have to follow
-
-![스크린샷 2024-09-07 11-46-14](https://github.com/user-attachments/assets/a1708383-8ac6-4986-a362-398e443b2043)
-
-Run python script
-
-![스크린샷 2024-09-07 11-47-12](https://github.com/user-attachments/assets/614e255d-0ccb-4b0f-ac12-b9c9d65dc04b)
-
-
-Result
-
-![image](https://github.com/user-attachments/assets/53db713c-6801-4b22-b9aa-86f731df7a2f)
+## 6. 람다함수 환경변수 교체 시
+```bash
+aws lambda update-function-configuration \
+  --function-name LAMBDA_NAME \
+  --environment "Variables={KEY1=VAL1,KEY2=VAL2,....}"
+```

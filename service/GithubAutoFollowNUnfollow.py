@@ -1,16 +1,12 @@
-import requests
 import aiohttp
-import asyncio
 import logging
-import os
 
 class GithubAutoFollowNUnfollow:
 
-    def __init__(self, username, token):
-        self.github_api_url = os.getenv("GITHUB_API_URL")
+    def __init__(self, username, token: str, api_url: str):
+        self.github_api_url = api_url
         self.github_username = username
         self.github_token = token
-
         self.request_headers = {
             "Authorization": f"token {self.github_token}",
             "Accept": "application/vnd.github.v3+json"
@@ -59,9 +55,9 @@ class GithubAutoFollowNUnfollow:
         except aiohttp.ClientError as e:
             logging.error(f"Failed to unfollow {unfollow_target}: {e}")
 
-    async def run(self):
-        followers = await self.get_users("followers")
-        following = await self.get_users("following")
+    async def run(self) -> None:
+        followers: set = await self.get_users("followers")
+        following: set = await self.get_users("following")
 
         logging.info(f"Followers: {len(followers)}")
         logging.info(f"Following: {len(following)}")

@@ -9,6 +9,7 @@ dependencies = [
     "certifi>=2025.1.31",
     "dotenv>=0.9.9",
     "multidict>=6.1.0",
+    "python-dotenv>=1.0.1",
     "requests>=2.32.3",
     "urllib3>=2.3.0",
 ]
