@@ -4,6 +4,8 @@
 AWS Serverless 기능들 사용해서 하루에 한번씩 실행되도록 구성했습니다.  
 Free tier 기준 비용 안나오니 안심해주세요.
 
+팔로워 여러명있을 때 동기식으로 처리하면 오래걸리니까, aiohttp 사용해서 비동기로 처리하도록, 코루틴 함수 기반으로 작성되어 있습니다.
+
 <img width="1108" height="223" alt="스크린샷 2025-09-16 오후 3 45 36" src="https://github.com/user-attachments/assets/3b573ad4-91bc-480e-9f80-5c6671eb2b3e" />
 
 # AWS Lambda + EventBridge 배포 가이드
