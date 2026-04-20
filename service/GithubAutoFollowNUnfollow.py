@@ -1,79 +1,162 @@
-import aiohttp
+import asyncio
 import logging
+import time
+from typing import Any, Iterable, Optional
+
+import aiohttp
+
+
+logger = logging.getLogger(__name__)
+
 
 class GithubAutoFollowNUnfollow:
-
-    def __init__(self, username, token: str, api_url: str):
-        self.github_api_url = api_url
-        self.github_username = username
-        self.github_token = token
-        self.request_headers = {
-            "Authorization": f"token {self.github_token}",
-            "Accept": "application/vnd.github.v3+json"
+    def __init__(
+        self,
+        username: str,
+        token: str,
+        api_url: str = "https://api.github.com",
+        concurrency: int = 5,
+        max_retries: int = 3,
+        dry_run: bool = False,
+        exclude_follow: Optional[Iterable[str]] = None,
+        exclude_unfollow: Optional[Iterable[str]] = None,
+    ) -> None:
+        self.api_url = api_url.rstrip("/")
+        self.username = username
+        self.concurrency = concurrency
+        self.max_retries = max_retries
+        self.dry_run = dry_run
+        self.exclude_follow = {u.lower() for u in (exclude_follow or [])}
+        self.exclude_unfollow = {u.lower() for u in (exclude_unfollow or [])}
+        self._headers = {
+            "Authorization": f"token {token}",
+            "Accept": "application/vnd.github.v3+json",
+            "X-GitHub-Api-Version": "2022-11-28",
         }
 
-    async def get_users(self, behavior: str) -> set:
-        users = set()
+    async def _request(
+        self,
+        session: aiohttp.ClientSession,
+        sem: asyncio.Semaphore,
+        method: str,
+        url: str,
+    ) -> Any:
+        """
+        GitHub API 요청 헬퍼 함수
+        primary/secondary rate limit 을 감지해서 재시도.
+        """
+        for attempt in range(1, self.max_retries + 1):
+            async with sem:
+                async with session.request(method, url, headers=self._headers) as resp:
+                    if resp.status in (403, 429):
+                        wait = self._rate_limit_wait_seconds(resp)
+                        if wait is not None:
+                            logger.warning(
+                                "Rate limited on %s %s (status=%d). Sleeping %ds (attempt %d/%d)",
+                                method, url, resp.status, wait, attempt, self.max_retries,
+                            )
+                            await asyncio.sleep(wait)
+                            continue
+                    resp.raise_for_status()
+                    if method == "GET":
+                        return await resp.json()
+                    return None
+        raise RuntimeError(f"Exhausted retries for {method} {url}")
+
+    @staticmethod
+    def _rate_limit_wait_seconds(resp: aiohttp.ClientResponse) -> Optional[int]:
+        retry_after = resp.headers.get("Retry-After")
+        if retry_after is not None:
+            try:
+                return max(1, int(retry_after))
+            except ValueError:
+                return 1
+        remaining = resp.headers.get("X-RateLimit-Remaining")
+        reset = resp.headers.get("X-RateLimit-Reset")
+        if remaining == "0" and reset is not None:
+            try:
+                return max(1, int(reset) - int(time.time()) + 1)
+            except ValueError:
+                return 1
+        return None
+
+    async def _get_users(
+        self,
+        session: aiohttp.ClientSession,
+        sem: asyncio.Semaphore,
+        behavior: str,
+    ) -> set[str]:
+        users: set[str] = set()
         page = 1
-        try:
-            async with aiohttp.ClientSession() as session:
-                while True:
-                    async with session.get(
-                            url=f"{self.github_api_url}/users/{self.github_username}/{behavior}?per_page=100&page={page}",
-                            headers=self.request_headers
-                    ) as response:
-                        response.raise_for_status()
-                        page_users = await response.json()
-                        if not page_users:
-                            break
-
-                    users.update(user["login"] for user in page_users)
-                    page += 1
-
-        except aiohttp.ClientError as e:
-            logging.error(f"Failed to get users for behavior '{behavior}': {e}")
-
+        while True:
+            url = f"{self.api_url}/users/{self.username}/{behavior}?per_page=100&page={page}"
+            try:
+                page_users = await self._request(session, sem, "GET", url)
+            except (aiohttp.ClientError, RuntimeError) as e:
+                logger.error("Failed to fetch %s page %d: %s", behavior, page, e)
+                break
+            if not page_users:
+                break
+            users.update(u["login"] for u in page_users)
+            page += 1
         return users
 
-    async def follow_user(self, follow_target: str) -> None:
-        request_url = f"{self.github_api_url}/user/following/{follow_target}"
+    async def _follow(self, session: aiohttp.ClientSession, sem: asyncio.Semaphore, target: str) -> bool:
+        if self.dry_run:
+            logger.info("[dry-run] follow %s", target)
+            return True
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.put(url=request_url, headers=self.request_headers) as response:
-                    response.raise_for_status()
-                    logging.info(f"Successfully followed {follow_target}")
-        except aiohttp.ClientError as e:
-            logging.error(f"Failed to follow {follow_target}: {e}")
+            await self._request(session, sem, "PUT", f"{self.api_url}/user/following/{target}")
+            logger.info("Followed %s", target)
+            return True
+        except (aiohttp.ClientError, RuntimeError) as e:
+            logger.error("Failed to follow %s: %s", target, e)
+            return False
 
-    async def unfollow_user(self, unfollow_target: str) -> None:
-        request_url = f"{self.github_api_url}/user/following/{unfollow_target}"
+    async def _unfollow(self, session: aiohttp.ClientSession, sem: asyncio.Semaphore, target: str) -> bool:
+        if self.dry_run:
+            logger.info("[dry-run] unfollow %s", target)
+            return True
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.delete(url=request_url, headers=self.request_headers) as response:
-                    response.raise_for_status()
-                    logging.info(f"Successfully unfollowed {unfollow_target}")
-        except aiohttp.ClientError as e:
-            logging.error(f"Failed to unfollow {unfollow_target}: {e}")
+            await self._request(session, sem, "DELETE", f"{self.api_url}/user/following/{target}")
+            logger.info("Unfollowed %s", target)
+            return True
+        except (aiohttp.ClientError, RuntimeError) as e:
+            logger.error("Failed to unfollow %s: %s", target, e)
+            return False
 
-    async def run(self) -> None:
-        followers: set = await self.get_users("followers")
-        following: set = await self.get_users("following")
+    async def run(self) -> dict:
+        sem = asyncio.Semaphore(self.concurrency)
+        async with aiohttp.ClientSession() as session:
+            followers = await self._get_users(session, sem, "followers")
+            following = await self._get_users(session, sem, "following")
 
-        logging.info(f"Followers: {len(followers)}")
-        logging.info(f"Following: {len(following)}")
+            logger.info("Followers: %d, Following: %d", len(followers), len(following))
 
-        # Follow users who follow you, but you don't follow back
-        to_follow = followers - following
-        if len(to_follow) > 0:
-            logging.info(f"Follow target list: {to_follow}")
-            for user in to_follow:
-                await self.follow_user(user)
+            to_follow = {u for u in (followers - following) if u.lower() not in self.exclude_follow}
+            to_unfollow = {u for u in (following - followers) if u.lower() not in self.exclude_unfollow}
 
-        # Unfollow users who don't follow you back
-        to_unfollow = following - followers
-        if len(to_unfollow) > 0:
-            logging.info(f"Unfollow target list: {to_unfollow}")
-            for user in to_unfollow:
-                await self.unfollow_user(user)
+            logger.info("Targets — follow: %d, unfollow: %d", len(to_follow), len(to_unfollow))
+            if self.dry_run:
+                logger.info("Dry-run 활성화: 실제 팔로우/언팔로우는 수행되지 않습니다.")
 
-        logging.info("Job Done!")
+            follow_results = await asyncio.gather(
+                *(self._follow(session, sem, u) for u in to_follow)
+            ) if to_follow else []
+            unfollow_results = await asyncio.gather(
+                *(self._unfollow(session, sem, u) for u in to_unfollow)
+            ) if to_unfollow else []
+
+        summary = {
+            "followers": len(followers),
+            "following": len(following),
+            "follow_attempts": len(to_follow),
+            "follow_success": sum(follow_results),
+            "follow_failed": len(to_follow) - sum(follow_results),
+            "unfollow_attempts": len(to_unfollow),
+            "unfollow_success": sum(unfollow_results),
+            "unfollow_failed": len(to_unfollow) - sum(unfollow_results),
+            "dry_run": self.dry_run,
+        }
+        logger.info("Summary: %s", summary)
+        return summary

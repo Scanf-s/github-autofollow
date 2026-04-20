@@ -1,7 +1,9 @@
+import argparse
 import asyncio
 import logging
 import os
 import sys
+from typing import Optional
 
 from dotenv import load_dotenv
 
@@ -15,28 +17,44 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def _parse_csv(value: Optional[str]) -> list[str]:
+    if not value:
+        return []
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
 async def main() -> int:
+    parser = argparse.ArgumentParser(description="GitHub 자동 팔로우/언팔로우")
+    parser.add_argument("--dry-run", action="store_true", help="실제 변경 없이 대상만 출력")
+    parser.add_argument("--concurrency", type=int, default=None, help="동시 요청 수 (기본 5)")
+    args = parser.parse_args()
+
     load_dotenv()
 
-    github_username = os.getenv("GITHUB_USERNAME")
-    github_token = os.getenv("GITHUB_TOKEN")
-    github_api_url = os.getenv("GITHUB_API_URL", "https://api.github.com")
+    username = os.getenv("GITHUB_USERNAME")
+    token = os.getenv("GITHUB_TOKEN")
+    api_url = os.getenv("GITHUB_API_URL", "https://api.github.com")
+    concurrency = args.concurrency or int(os.getenv("CONCURRENCY", "5"))
+    exclude_follow = _parse_csv(os.getenv("EXCLUDE_FOLLOW"))
+    exclude_unfollow = _parse_csv(os.getenv("EXCLUDE_UNFOLLOW"))
 
-    if not github_username or not github_token:
+    if not username or not token:
         logger.error(
             "GITHUB_USERNAME 또는 GITHUB_TOKEN 환경변수가 설정되지 않았습니다. "
             ".env 파일을 확인해주세요."
         )
         return 1
 
-    logger.info("Github Follow/Unfollow script 실행")
     service = GithubAutoFollowNUnfollow(
-        username=github_username,
-        token=github_token,
-        api_url=github_api_url,
+        username=username,
+        token=token,
+        api_url=api_url,
+        concurrency=concurrency,
+        dry_run=args.dry_run,
+        exclude_follow=exclude_follow,
+        exclude_unfollow=exclude_unfollow,
     )
     await service.run()
-    logger.info("작업 완료")
     return 0
 
 

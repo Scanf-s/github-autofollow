@@ -45,6 +45,29 @@ python main.py
 - 나를 팔로우했지만 내가 맞팔하지 않은 사용자 → 팔로우
 - 내가 팔로우했지만 나를 팔로우하지 않은 사용자 → 언팔로우
 
+## 4. 옵션
+
+### CLI 플래그
+- `--dry-run` : 실제 변경 없이 대상 목록만 출력
+- `--concurrency N` : 동시 API 요청 수 (기본 5)
+
+```bash
+uv run python main.py --dry-run
+uv run python main.py --concurrency 10
+```
+
+### 환경변수 (선택)
+- `CONCURRENCY` : 동시 요청 수 (CLI 플래그 우선)
+- `EXCLUDE_FOLLOW` : 맞팔하지 않을 사용자 목록 (쉼표 구분)
+- `EXCLUDE_UNFOLLOW` : 언팔하지 않을 사용자 목록 (쉼표 구분)
+- `DRY_RUN` : Lambda 에서 dry-run 모드로 실행 (`1`/`true`)
+
+## 5. 테스트
+
+```bash
+uv run pytest
+```
+
 ---
 
 # AWS Lambda + EventBridge 배포 가이드
