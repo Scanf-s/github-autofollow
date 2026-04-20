@@ -8,6 +8,45 @@ Free tier 기준 비용 안나오니 안심해주세요.
 
 <img width="1108" height="223" alt="스크린샷 2025-09-16 오후 3 45 36" src="https://github.com/user-attachments/assets/3b573ad4-91bc-480e-9f80-5c6671eb2b3e" />
 
+# 로컬 실행 가이드
+
+## 1. 요구 사항
+- Python 3.12 이상
+- [uv](https://github.com/astral-sh/uv) (권장) 또는 pip
+
+## 2. 환경변수 설정
+
+`.env.example` 을 복사해서 `.env` 파일을 만들고 값을 채워 넣습니다.
+
+```bash
+cp .env.example .env
+```
+
+GitHub Personal Access Token 은 [여기](https://github.com/settings/tokens)에서 발급받을 수 있고,
+필요한 scope 은 `user:follow`, `read:user` 입니다.
+
+## 3. 의존성 설치 및 실행
+
+### uv 사용 시 (권장)
+```bash
+uv sync
+uv run python main.py
+```
+
+### pip 사용 시
+```bash
+python -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -e .
+python main.py
+```
+
+실행하면 현재 계정 기준으로 다음 동작을 수행합니다.
+- 나를 팔로우했지만 내가 맞팔하지 않은 사용자 → 팔로우
+- 내가 팔로우했지만 나를 팔로우하지 않은 사용자 → 언팔로우
+
+---
+
 # AWS Lambda + EventBridge 배포 가이드
 
 ## 1. Docker 이미지 빌드 및 ECR 푸시
