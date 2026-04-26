@@ -1,39 +1,36 @@
-# Serverless 아키텍쳐 기반 깃허브 자동 팔로우/언팔로우 스크립트
+# GitHub Auto Follow/Unfollow Script (Serverless)
 
-깃허브 팔로우/언팔로우 수동으로 하기 귀찮아서 자동화 스크립트 만들었고,  
-AWS Serverless 기능들 사용해서 하루에 한번씩 실행되도록 구성했습니다.  
-Free tier 기준 비용 안나오니 안심해주세요.
+A small automation script for GitHub follow/unfollow that I built because doing it manually was tedious. It runs on AWS Serverless components on a configurable schedule (e.g. once a day). Cost stays within the AWS Free Tier under typical usage.
 
-팔로워 여러명있을 때 동기식으로 처리하면 오래걸리니까, aiohttp 사용해서 비동기로 처리하도록, 코루틴 함수 기반으로 작성되어 있습니다.
+When you have many followers, processing them synchronously takes a long time, so the script is written using `aiohttp` and coroutines to run requests asynchronously.
 
-<img width="1108" height="223" alt="스크린샷 2025-09-16 오후 3 45 36" src="https://github.com/user-attachments/assets/3b573ad4-91bc-480e-9f80-5c6671eb2b3e" />
+<img width="1108" height="223" alt="screenshot 2025-09-16 15 45 36" src="https://github.com/user-attachments/assets/3b573ad4-91bc-480e-9f80-5c6671eb2b3e" />
 
-# 로컬 실행 가이드
+# Local Execution Guide
 
-## 1. 요구 사항
-- Python 3.12 이상
-- [uv](https://github.com/astral-sh/uv) (권장) 또는 pip
+## 1. Requirements
+- Python 3.12 or later
+- [uv](https://github.com/astral-sh/uv) (recommended) or pip
 
-## 2. 환경변수 설정
+## 2. Environment variables
 
-`.env.example` 을 복사해서 `.env` 파일을 만들고 값을 채워 넣습니다.
+Copy `.env.example` to `.env` and fill in the values.
 
 ```bash
 cp .env.example .env
 ```
 
-GitHub Personal Access Token 은 [여기](https://github.com/settings/tokens)에서 발급받을 수 있고,
-필요한 scope 은 `user:follow`, `read:user` 입니다.
+You can issue a GitHub Personal Access Token [here](https://github.com/settings/tokens). The required scopes are `user:follow` and `read:user`.
 
-## 3. 의존성 설치 및 실행
+## 3. Install dependencies and run
 
-### uv 사용 시 (권장)
+### Using uv (recommended)
 ```bash
 uv sync
 uv run python main.py
 ```
 
-### pip 사용 시
+### Using pip
 ```bash
 python -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
@@ -41,28 +38,28 @@ pip install -e .
 python main.py
 ```
 
-실행하면 현재 계정 기준으로 다음 동작을 수행합니다.
-- 나를 팔로우했지만 내가 맞팔하지 않은 사용자 → 팔로우
-- 내가 팔로우했지만 나를 팔로우하지 않은 사용자 → 언팔로우
+When executed, the script performs the following actions on the current account:
+- Users who follow you but you do not follow back → follow
+- Users you follow but who do not follow you → unfollow
 
-## 4. 옵션
+## 4. Options
 
-### CLI 플래그
-- `--dry-run` : 실제 변경 없이 대상 목록만 출력
-- `--concurrency N` : 동시 API 요청 수 (기본 5)
+### CLI flags
+- `--dry-run` : List the target users without making any actual changes
+- `--concurrency N` : Number of concurrent API requests (default: 5)
 
 ```bash
 uv run python main.py --dry-run
 uv run python main.py --concurrency 10
 ```
 
-### 환경변수 (선택)
-- `CONCURRENCY` : 동시 요청 수 (CLI 플래그 우선)
-- `EXCLUDE_FOLLOW` : 맞팔하지 않을 사용자 목록 (쉼표 구분)
-- `EXCLUDE_UNFOLLOW` : 언팔하지 않을 사용자 목록 (쉼표 구분)
-- `DRY_RUN` : Lambda 에서 dry-run 모드로 실행 (`1`/`true`)
+### Environment variables (optional)
+- `CONCURRENCY` : Number of concurrent requests (CLI flag takes precedence)
+- `EXCLUDE_FOLLOW` : Comma-separated list of users to skip when following
+- `EXCLUDE_UNFOLLOW` : Comma-separated list of users to skip when unfollowing
+- `DRY_RUN` : Run in dry-run mode on Lambda (`1` / `true`)
 
-## 5. 테스트
+## 5. Tests
 
 ```bash
 uv run pytest
@@ -72,22 +69,22 @@ uv run pytest
 
 # AWS Deploy Guide
 
-## 1. Prepare your own AWS account with Access key and Secret key
-- For easy management, you can attach Administrator role into your IAM User.
+## 1. Prepare your own AWS account with an Access Key and Secret Key
+- For simplicity, you can attach the Administrator role to your IAM user.
 
-## 2. Issue your Github API Key
+## 2. Issue your GitHub API key
 
-## 3. Build lambda function
+## 3. Build the Lambda function
 ```bash
 make build
 ```
 
-## 4. Deploy AWS infrastructure (Only for first time)
+## 4. Deploy AWS infrastructure (first time only)
 ```bash
 sam deploy --guided
 ```
 
-`--guided` will prompt you for the following. Values are saved to `samconfig.toml`, so subsequent deploys do not need them again.
+`--guided` will prompt you for the following. The values are saved to `samconfig.toml`, so subsequent deploys do not need them again.
 
 | Prompt | Description | Example |
 | --- | --- | --- |
@@ -96,15 +93,15 @@ sam deploy --guided
 | `Parameter LambdaFunctionName` | Lambda function name | `GithubAutoFollowLambda` |
 | `Parameter GithubUsername` | Your GitHub username | `blabla` |
 | `Parameter GithubToken` | GitHub Personal Access Token (`user:follow`, `read:user` scopes) | `ghp_xxx...` |
-| `Parameter GithubApiUrl` | GitHub API endpoint (press Enter to use default) | `https://api.github.com` |
+| `Parameter GithubApiUrl` | GitHub API endpoint (press Enter to use the default) | `https://api.github.com` |
 | `Parameter ScheduleExpression` | EventBridge schedule (rate or cron) — see section 6 | `rate(3 hours)` |
 | `Confirm changes before deploy` | Review changesets before applying | `Y/N` |
 | `Allow SAM CLI IAM role creation` | Required for the Lambda execution role | `Y/N` |
 | `Save arguments to configuration file` | Save answers to `samconfig.toml` | `Y/N` |
 
-You can just press Enter to accept the defaults.
+You can just press Enter to accept the defaults for any other prompts.
 
-## 5. (Optional) Update function
+## 5. (Optional) Update the function
 ```bash
 make build
 sam deploy
@@ -124,4 +121,4 @@ sam deploy \
   --parameter-overrides ScheduleExpression="rate(1 day)"
 ```
 
-Or edit `samconfig.toml` (`parameter_overrides`) so the new value sticks for future deploys.
+Or edit `samconfig.toml` (`parameter_overrides`) so the new value persists across future deploys.
