@@ -21,9 +21,6 @@ def _as_bool(value: Optional[str]) -> bool:
 
 
 def lambda_handler(event, context):
-    """
-    GitHub 팔로우 대상을 자동 팔로우, 언팔로우 대상을 자동 언팔로우 해주는 스크립트.
-    """
     try:
         username = os.getenv("GITHUB_USERNAME")
         token = os.getenv("GITHUB_TOKEN")
@@ -34,11 +31,10 @@ def lambda_handler(event, context):
         exclude_unfollow = _parse_csv(os.getenv("EXCLUDE_UNFOLLOW"))
 
         if not username or not token:
-            msg = "해당 스크립트를 실행하기 위해 필요한 환경변수가 설정되지 않았습니다."
+            msg = "Please setup environment variables before execute"
             logger.error(msg)
             return {"statusCode": 400, "body": {"error": msg}}
 
-        logger.info("Github Follow/Unfollow script 실행")
         service = GithubAutoFollowNUnfollow(
             username=username,
             token=token,
@@ -49,14 +45,13 @@ def lambda_handler(event, context):
             exclude_unfollow=exclude_unfollow,
         )
         summary = asyncio.run(service.run())
-        logger.info("작업 완료")
 
         return {
             "statusCode": 200,
-            "body": {"message": "Github Follow/Unfollow 작업 완료", "summary": summary},
+            "body": {"message": "Github Follow/Unfollow completed", "summary": summary},
         }
 
     except Exception as e:
-        error_msg = f"실행 도중 오류 발생: {e}"
+        error_msg = f"Unexpected error occurred: {e}"
         logger.error(error_msg)
         return {"statusCode": 500, "body": {"error": error_msg}}

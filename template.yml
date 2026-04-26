@@ -1,0 +1,64 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Github Autofollow Service
+
+# ---------------------------------------------------------------------------
+# Globals
+# ---------------------------------------------------------------------------
+Globals:
+  Function:
+    Architectures:
+      - x86_64
+    Timeout: 120
+    MemorySize: 128
+
+Parameters:
+
+  LambdaFunctionName:
+    Type: String
+
+  GithubUsername:
+    Type: String
+
+  GithubToken:
+    Type: String
+    NoEcho: true
+
+  GithubApiUrl:
+    Type: String
+    Default: https://api.github.com
+
+  ScheduleExpression: # You can modify this rate or cron value as you want
+    Type: String
+    Default: rate(3 hours)
+
+# ---------------------------------------------------------------------------
+# Resources
+# ---------------------------------------------------------------------------
+Resources:
+
+  # ---------------------------------------------------------------------------
+  # Github AutoFollow Lambda
+  # ---------------------------------------------------------------------------
+  GithubAutoFollowLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Ref LambdaFunctionName
+      Description: Automated Github user follow and unfollow lambda function
+      Runtime: python3.12
+      Handler: lambda_function.lambda_handler
+      CodeUri: ./deploy.zip
+      ReservedConcurrentExecutions: 1
+      Events:
+        ScheduleEvent:
+          Type: Schedule
+          Properties:
+            Schedule: !Ref ScheduleExpression
+            Name: github-auto-follow-event
+      Environment:
+        Variables:
+          GITHUB_USERNAME: !Ref GithubUsername
+          GITHUB_TOKEN: !Ref GithubToken
+          GITHUB_API_URL: !Ref GithubApiUrl
+      Policies:
+        - AWSLambdaBasicExecutionRole

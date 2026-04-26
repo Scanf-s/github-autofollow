@@ -287,5 +287,8 @@ poetry.toml
 
 # LSP config files
 pyrightconfig.json
+.aws-sam/
+samconfig.toml
+deploy.zip
 
 # End of https://www.toptal.com/developers/gitignore/api/python,pycharm

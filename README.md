@@ -70,97 +70,58 @@ uv run pytest
 
 ---
 
-# AWS Lambda + EventBridge 배포 가이드
+# AWS Deploy Guide
 
-## 1. Docker 이미지 빌드 및 ECR 푸시
+## 1. Prepare your own AWS account with Access key and Secret key
+- For easy management, you can attach Administrator role into your IAM User.
 
+## 2. Issue your Github API Key
+
+## 3. Build lambda function
 ```bash
-# ECR 리포지토리 생성
-aws ecr create-repository --repository-name ECR레포지토리이름
-
-# Docker 이미지 빌드 (Ubuntu/Linux)
-docker build -t ECRIMAGE경로 .
-# (MAC)
-docker buildx build --platform linux/amd64 -t ECRIMAGE경로 .
-
-# ECR 로그인
-aws ecr get-login-password --region <aws-region> | docker login --username AWS --password-stdin <password>
-
-# 이미지 푸시
-docker push ECRIMAGE경로
+make build
 ```
 
-## 2. IAM 역할 생성
-
-```json
-{
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-          "Effect": "Allow",
-          "Principal": {
-            "Service": "lambda.amazonaws.com"
-          },
-          "Action": "sts:AssumeRole"
-        }
-    ]
-}
-```
-이렇게 Assume Role을 지정해주고, 연결되는 정책에 AWSLambdaBasicExecutionRole 또는 귀찮으면 FullAcces 추가 `!해당 정책 ARN 기억해두기!`
-
-## 3. Lambda 함수 생성
-
+## 4. Deploy AWS infrastructure (Only for first time)
 ```bash
-# Lambda 함수 생성 (Container Image)
-aws lambda create-function \
-    --function-name LAMBDA_NAME \
-    --package-type Image \
-    --code ImageUri=이미지경로 \
-    --role 2번에서지정한RoleARN \
-    --timeout 300 \
-    --memory-size 512 \
-    --environment "Variables={GITHUB_USERNAME=깃허브사용자이름,GITHUB_TOKEN=토큰이름,GITHUB_API_URL=https://api.github.com}"
-  
-# 확인 방법
-aws lambda get-function --function-name LAMBDA_NAME
+sam deploy --guided
 ```
 
-## 4. EventBridge 스케줄 생성
+`--guided` will prompt you for the following. Values are saved to `samconfig.toml`, so subsequent deploys do not need them again.
 
+| Prompt | Description | Example |
+| --- | --- | --- |
+| `Stack Name` | CloudFormation stack name (any unique name within the account/region) | `github-autofollow` |
+| `AWS Region` | Region to deploy to | `ap-northeast-2` |
+| `Parameter LambdaFunctionName` | Lambda function name | `GithubAutoFollowLambda` |
+| `Parameter GithubUsername` | Your GitHub username | `blabla` |
+| `Parameter GithubToken` | GitHub Personal Access Token (`user:follow`, `read:user` scopes) | `ghp_xxx...` |
+| `Parameter GithubApiUrl` | GitHub API endpoint (press Enter to use default) | `https://api.github.com` |
+| `Parameter ScheduleExpression` | EventBridge schedule (rate or cron) — see section 6 | `rate(3 hours)` |
+| `Confirm changes before deploy` | Review changesets before applying | `Y/N` |
+| `Allow SAM CLI IAM role creation` | Required for the Lambda execution role | `Y/N` |
+| `Save arguments to configuration file` | Save answers to `samconfig.toml` | `Y/N` |
+
+You can just press Enter to accept the defaults.
+
+## 5. (Optional) Update function
 ```bash
-# EventBridge 규칙 생성 (한국시간 기준 매일 오전 9시 실행)
-aws events put-rule \
-    --name EVENTBRIDGE_NAME \
-    --schedule-expression "cron(0 9 * * ? *)" \
-    --description "Daily GitHub auto follow/unfollow"
-
-# 이거 생성하고 ARN확인하는 방법
-aws events list-rules --name-prefix EVENTBRIDGE_NAME
-
-# Lambda에 Eventbridge 권한 부여
-aws lambda add-permission \
-    --function-name LAMBDA_NAME \
-    --statement-id allow-eventbridge \
-    --action lambda:InvokeFunction \
-    --principal events.amazonaws.com \
-    --source-arn EVENTBRIDGE_ARN
-    
-# Lambda 함수를 타겟으로 추가
-aws events put-targets \
-  --rule EVENTBRIDGE_NAME \
-  --targets "Id"="1","Arn"="LAMBDA_ARN"
+make build
+sam deploy
 ```
 
-## 5. 이미지 업데이트 시
+## 6. Change the EventBridge schedule
+
+The Lambda is triggered by an EventBridge rule defined via the `ScheduleExpression` parameter in `template.yml`. You can change it without editing the template by passing a parameter override.
+
+Supported expression formats (see [AWS docs](https://docs.aws.amazon.com/eventbridge/latest/userguide/eb-rate-expressions.html)):
+- `rate(N minutes|hours|days)` — fixed interval. e.g. `rate(1 hour)`, `rate(1 day)`
+- `cron(min hour day month day-of-week year)` — UTC, 6 fields. One of `day` / `day-of-week` must be `?`. e.g. `cron(0 0 * * ? *)` runs daily at 00:00 UTC (09:00 KST)
+
+Update only the schedule on an existing stack:
 ```bash
-aws lambda update-function-code \
-  --function-name LAMBDA_NAME \
-  --image-uri ECR이미지경로
+sam deploy \
+  --parameter-overrides ScheduleExpression="rate(1 day)"
 ```
 
-## 6. 람다함수 환경변수 교체 시
-```bash
-aws lambda update-function-configuration \
-  --function-name LAMBDA_NAME \
-  --environment "Variables={KEY1=VAL1,KEY2=VAL2,....}"
-```
+Or edit `samconfig.toml` (`parameter_overrides`) so the new value sticks for future deploys.

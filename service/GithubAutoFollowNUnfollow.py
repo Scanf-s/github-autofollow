@@ -41,10 +41,6 @@ class GithubAutoFollowNUnfollow:
         method: str,
         url: str,
     ) -> Any:
-        """
-        GitHub API 요청 헬퍼 함수
-        primary/secondary rate limit 을 감지해서 재시도.
-        """
         for attempt in range(1, self.max_retries + 1):
             async with sem:
                 async with session.request(method, url, headers=self._headers) as resp:
@@ -138,7 +134,7 @@ class GithubAutoFollowNUnfollow:
 
             logger.info("Targets — follow: %d, unfollow: %d", len(to_follow), len(to_unfollow))
             if self.dry_run:
-                logger.info("Dry-run 활성화: 실제 팔로우/언팔로우는 수행되지 않습니다.")
+                logger.info("Dry-run activated: no actual follow/unfollow logic executed")
 
             follow_results = await asyncio.gather(
                 *(self._follow(session, sem, u) for u in to_follow)
